@@ -1,5 +1,8 @@
 extern crate irc;
 
+mod sh;
+mod replace;
+
 use std::io::{self, BufRead, BufReader};
 use std::fs::File;
 use std::thread;
@@ -11,6 +14,8 @@ use irc::client::data::message::Message;
 use irc::client::server::{IrcServer, NetIrcServer, Server};
 use irc::client::server::utils::ServerExt;
 use irc::client::data::kinds::{IrcRead, IrcWrite};
+use sh::Lex;
+
 
 fn join_start_channels<T, U>(server: &IrcServer<T, U>) -> io::Result<()>
         where T: IrcRead, U: IrcWrite {
@@ -31,7 +36,14 @@ fn find_or_spawn<'a, S>(arc_irc_server: &Arc<NetIrcServer>,
         thread::spawn(move || {
             for message in rx.iter() {
                 if let Ok(command) = Command::from_message(&message) {
-                    irc_server.send(command).unwrap();
+                    match command {
+                        Command::PRIVMSG(target, msg) => {
+                            let lex = Lex::new(&*msg);
+                            let resp = format!("{:?}", lex.collect::<Vec<_>>());
+                            irc_server.send(Command::PRIVMSG(target, resp)).unwrap();
+                        },
+                        _ => (),
+                    }
                 }
             }
         });
