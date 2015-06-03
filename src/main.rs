@@ -1,6 +1,6 @@
 extern crate irc;
 
-mod sh;
+mod lex;
 mod replace;
 
 use std::io::{self, BufRead, BufReader};
@@ -14,7 +14,7 @@ use irc::client::data::message::Message;
 use irc::client::server::{IrcServer, NetIrcServer, Server};
 use irc::client::server::utils::ServerExt;
 use irc::client::data::kinds::{IrcRead, IrcWrite};
-use sh::Lex;
+use lex::Lex;
 
 
 fn join_start_channels<T, U>(server: &IrcServer<T, U>) -> io::Result<()>
