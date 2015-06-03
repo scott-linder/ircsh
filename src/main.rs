@@ -53,11 +53,11 @@ fn main() {
             match command {
                 Command::PRIVMSG(_, msg) => {
                     if msg.starts_with("#") {
-                        if let Some(nick) = message.get_source_nickname() {
-                            let user_chan = find_or_spawn(&arc_irc_server,
+                        if let Some(chan) = message.get_source_nickname()
+                                .map(|nick| find_or_spawn(&arc_irc_server,
                                                           &mut user_senders,
-                                                          nick);
-                            user_chan.send(message.clone()).unwrap();
+                                                          nick)) {
+                            chan.send(message).unwrap();
                         }
                     }
                 },
