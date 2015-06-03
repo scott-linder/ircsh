@@ -25,8 +25,7 @@ fn find_or_spawn<'a, S>(arc_irc_server: &Arc<NetIrcServer>,
                      user_senders: &'a mut HashMap<String, Sender<Message>>,
                      nick: S) -> &'a mut Sender<Message>
         where S: Into<String> {
-    let nick = nick.into();
-    user_senders.entry(nick).or_insert_with(|| {
+    user_senders.entry(nick.into()).or_insert_with(|| {
         let (tx, rx) = channel();
         let irc_server = arc_irc_server.clone();
         thread::spawn(move || {
