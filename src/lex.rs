@@ -43,15 +43,15 @@ pub enum Tok<'a> {
 /// Implemented as an iterator which yields a result. After an error is
 /// encountered and returned (e.g. `Some(Err(..))`) the iterator will
 /// yield `None` forever.
-pub struct Lex<'a> {
+pub struct Lexer<'a> {
     source: &'a str,
     chars: ReplaceOne<CharIndices<'a>>,
 }
 
-impl<'a> Lex<'a> {
+impl<'a> Lexer<'a> {
     /// Create a new lexer.
-    pub fn new(source: &'a str) -> Lex<'a> {
-        Lex {
+    pub fn new(source: &'a str) -> Lexer<'a> {
+        Lexer {
             source: source,
             chars: ReplaceOne::new(source.char_indices()),
         }
@@ -99,7 +99,7 @@ impl<'a> Lex<'a> {
     }
 }
 
-impl<'a> Iterator for Lex<'a> {
+impl<'a> Iterator for Lexer<'a> {
     type Item = Result<Tok<'a>>;
 
     fn next(&mut self) -> Option<Result<Tok<'a>>> {
@@ -121,24 +121,24 @@ impl<'a> Iterator for Lex<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Tok, Lex};
+    use super::{Tok, Lexer};
 
     #[test]
     fn empty() {
-        let mut lex = Lex::new("");
+        let mut lex = Lexer::new("");
         assert_eq!(lex.next(), None);
     }
 
     #[test]
     fn string() {
-        let mut lex = Lex::new("string");
+        let mut lex = Lexer::new("string");
         assert_eq!(lex.next(), Some(Ok(Tok::String("string"))));
         assert_eq!(lex.next(), None);
     }
 
     #[test]
     fn two_string() {
-        let mut lex = Lex::new("one two");
+        let mut lex = Lexer::new("one two");
         assert_eq!(lex.next(), Some(Ok(Tok::String("one"))));
         assert_eq!(lex.next(), Some(Ok(Tok::String("two"))));
         assert_eq!(lex.next(), None);
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn string_semicolon_string() {
-        let mut lex = Lex::new("one; two");
+        let mut lex = Lexer::new("one; two");
         assert_eq!(lex.next(), Some(Ok(Tok::String("one"))));
         assert_eq!(lex.next(), Some(Ok(Tok::Semicolon)));
         assert_eq!(lex.next(), Some(Ok(Tok::String("two"))));
@@ -155,21 +155,21 @@ mod tests {
 
     #[test]
     fn quoted_string() {
-        let mut lex = Lex::new(r#""foo bar""#);
+        let mut lex = Lexer::new(r#""foo bar""#);
         assert_eq!(lex.next(), Some(Ok(Tok::String("foo bar"))));
         assert_eq!(lex.next(), None);
     }
 
     #[test]
     fn empty_quoted_string() {
-        let mut lex = Lex::new(r#""""#);
+        let mut lex = Lexer::new(r#""""#);
         assert_eq!(lex.next(), Some(Ok(Tok::String(""))));
         assert_eq!(lex.next(), None);
     }
 
     #[test]
     fn quoted_strings_and_semicolons() {
-        let mut lex = Lex::new(r#"foo "bar baz" qux; one two "three" """#);
+        let mut lex = Lexer::new(r#"foo "bar baz" qux; one two "three" """#);
         assert_eq!(lex.next(), Some(Ok(Tok::String("foo"))));
         assert_eq!(lex.next(), Some(Ok(Tok::String("bar baz"))));
         assert_eq!(lex.next(), Some(Ok(Tok::String("qux"))));

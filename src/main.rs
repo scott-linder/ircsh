@@ -1,6 +1,7 @@
 extern crate irc;
 
 mod lex;
+mod parse;
 mod replace;
 
 use std::io::{self, BufRead, BufReader};
@@ -14,7 +15,7 @@ use irc::client::data::message::Message;
 use irc::client::server::{IrcServer, NetIrcServer, Server};
 use irc::client::server::utils::ServerExt;
 use irc::client::data::kinds::{IrcRead, IrcWrite};
-use lex::Lex;
+use lex::Lexer;
 
 
 fn join_start_channels<T, U>(server: &IrcServer<T, U>) -> io::Result<()>
@@ -38,8 +39,9 @@ fn find_or_spawn<'a, S>(arc_irc_server: &Arc<NetIrcServer>,
                 if let Ok(command) = Command::from_message(&message) {
                     match command {
                         Command::PRIVMSG(target, msg) => {
-                            let lex = Lex::new(&*msg);
-                            let resp = format!("{:?}", lex.collect::<Vec<_>>());
+                            let lex = Lexer::new(&*msg);
+                            let parsed = parse::parse(lex);
+                            let resp = format!("{:?}", parsed);
                             irc_server.send(Command::PRIVMSG(target, resp)).unwrap();
                         },
                         _ => (),
