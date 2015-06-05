@@ -1,5 +1,6 @@
 extern crate irc;
 
+mod sh;
 mod lex;
 mod parse;
 mod replace;
@@ -15,8 +16,9 @@ use irc::client::data::message::Message;
 use irc::client::server::{IrcServer, NetIrcServer, Server};
 use irc::client::server::utils::ServerExt;
 use irc::client::data::kinds::{IrcRead, IrcWrite};
-use lex::Lexer;
+use sh::Sh;
 
+const LEADER: char = '~';
 
 fn join_start_channels<T, U>(server: &IrcServer<T, U>) -> io::Result<()>
         where T: IrcRead, U: IrcWrite {
@@ -31,18 +33,32 @@ fn find_or_spawn<'a, S>(arc_irc_server: &Arc<NetIrcServer>,
                      user_senders: &'a mut HashMap<String, Sender<Message>>,
                      nick: S) -> &'a mut Sender<Message>
         where S: Into<String> {
-    user_senders.entry(nick.into()).or_insert_with(|| {
+    let nick = nick.into();
+    user_senders.entry(nick.clone()).or_insert_with(|| {
         let (tx, rx) = channel();
-        let irc_server = arc_irc_server.clone();
+        let server = arc_irc_server.clone();
         thread::spawn(move || {
+            let mut sh = Sh::new();
+            sh.cmds.insert("echo".into(), Box::new(|args: &[&str]| {
+                args.connect(" ")
+            }));
+            sh.cmds.insert("count".into(), Box::new(|args: &[&str]| {
+                args.len().to_string()
+            }));
             for message in rx.iter() {
                 if let Ok(command) = Command::from_message(&message) {
                     match command {
                         Command::PRIVMSG(target, msg) => {
-                            let lex = Lexer::new(&*msg);
-                            let parsed = parse::parse(lex);
-                            let resp = format!("{:?}", parsed);
-                            irc_server.send(Command::PRIVMSG(target, resp)).unwrap();
+                            let msg = msg.trim_left_matches(LEADER);
+                            match sh.run_str(msg) {
+                                Ok(rs) => for r in rs {
+                                    server.send(Command::PRIVMSG(target.clone(), match r {
+                                        Ok(s) => format!("{}: {}", nick, s),
+                                        Err(e) => format!("error: {}", e),
+                                    })).unwrap();
+                                },
+                                Err(e) => server.send(Command::PRIVMSG(target, format!("error: {}", e))).unwrap(),
+                            }
                         },
                         _ => (),
                     }
@@ -65,7 +81,7 @@ fn main() {
         if let Ok(command) = Command::from_message(&message) {
             match command {
                 Command::PRIVMSG(_, msg) => {
-                    if msg.starts_with("#") {
+                    if msg.starts_with(LEADER) {
                         if let Some(chan) = message.get_source_nickname()
                                 .map(|nick| find_or_spawn(&arc_irc_server,
                                                           &mut user_senders,

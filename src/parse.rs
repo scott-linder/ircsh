@@ -31,7 +31,7 @@ impl From<lex::Error> for Error {
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct Cmd<'a>(Vec<&'a str>);
+pub struct Cmd<'a>(pub Vec<&'a str>);
 
 impl<'a> Cmd<'a> {
     pub fn new() -> Cmd<'a> {
