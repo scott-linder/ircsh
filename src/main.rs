@@ -9,19 +9,17 @@ use std::io::{self, BufRead, BufReader};
 use std::fs::File;
 use std::thread;
 use std::sync::mpsc::{channel, Sender};
-use std::sync::Arc;
 use std::collections::HashMap;
 use irc::client::data::command::Command;
 use irc::client::data::message::Message;
-use irc::client::server::{IrcServer, NetIrcServer, Server};
+use irc::client::server::{IrcServer, Server};
 use irc::client::server::utils::ServerExt;
-use irc::client::data::kinds::{IrcRead, IrcWrite};
 use sh::Sh;
 
 const LEADER: char = '~';
 
-fn join_start_channels<T, U>(server: &IrcServer<T, U>) -> io::Result<()>
-        where T: IrcRead, U: IrcWrite {
+fn join_start_channels<S>(server: &S) -> io::Result<()>
+        where S: Server {
     let channels = BufReader::new(try!(File::open("channels.txt")));
     for line in channels.lines() {
         try!(server.send_join(&*try!(line)));
@@ -29,39 +27,37 @@ fn join_start_channels<T, U>(server: &IrcServer<T, U>) -> io::Result<()>
     Ok(())
 }
 
-fn find_or_spawn<'a, S>(arc_irc_server: &Arc<NetIrcServer>,
+fn find_or_spawn<'a, S>(server: &IrcServer,
                      user_senders: &'a mut HashMap<String, Sender<Message>>,
                      nick: S) -> &'a mut Sender<Message>
         where S: Into<String> {
     let nick = nick.into();
     user_senders.entry(nick.clone()).or_insert_with(|| {
-        let (tx, rx) = channel();
-        let server = arc_irc_server.clone();
+        let (tx, rx) = channel::<Message>();
+        let server = server.clone();
         thread::spawn(move || {
             let mut sh = Sh::new();
             sh.cmds.insert("echo".into(), Box::new(|args: &[&str]| {
-                args.connect(" ")
+                args.join(" ")
             }));
             sh.cmds.insert("count".into(), Box::new(|args: &[&str]| {
                 args.len().to_string()
             }));
             for message in rx.iter() {
-                if let Ok(command) = Command::from_message(&message) {
-                    match command {
-                        Command::PRIVMSG(target, msg) => {
-                            let msg = msg.trim_left_matches(LEADER);
-                            match sh.run_str(msg) {
-                                Ok(rs) => for r in rs {
-                                    server.send(Command::PRIVMSG(target.clone(), match r {
-                                        Ok(s) => format!("{}: {}", nick, s),
-                                        Err(e) => format!("error: {}", e),
-                                    })).unwrap();
-                                },
-                                Err(e) => server.send(Command::PRIVMSG(target, format!("error: {}", e))).unwrap(),
-                            }
-                        },
-                        _ => (),
-                    }
+                match message.command {
+                    Command::PRIVMSG(ref target, ref msg) => {
+                        let msg = msg.trim_left_matches(LEADER);
+                        match sh.run_str(msg) {
+                            Ok(rs) => for r in rs {
+                                server.send(Command::PRIVMSG(target.clone(), match r {
+                                    Ok(s) => format!("{}: {}", nick, s),
+                                    Err(e) => format!("error: {}", e),
+                                })).unwrap();
+                            },
+                            Err(e) => server.send(Command::PRIVMSG(target.clone(), format!("error: {}", e))).unwrap(),
+                        }
+                    },
+                    _ => (),
                 }
             }
         });
@@ -70,28 +66,25 @@ fn find_or_spawn<'a, S>(arc_irc_server: &Arc<NetIrcServer>,
 }
 
 fn main() {
-    let arc_irc_server = Arc::new(IrcServer::new("config.json").unwrap());
-    let server = arc_irc_server.clone();
+    let server = IrcServer::new("config.json").unwrap();
     server.identify().unwrap();
     join_start_channels(&server).unwrap();
     let mut user_senders = HashMap::new();
 
     for message in server.iter() {
         let message = message.unwrap();
-        if let Ok(command) = Command::from_message(&message) {
-            match command {
-                Command::PRIVMSG(_, msg) => {
-                    if msg.starts_with(LEADER) {
-                        if let Some(chan) = message.get_source_nickname()
-                                .map(|nick| find_or_spawn(&arc_irc_server,
-                                                          &mut user_senders,
-                                                          nick)) {
-                            chan.send(message).unwrap();
-                        }
+        match message.command {
+            Command::PRIVMSG(_, ref msg) => {
+                if msg.starts_with(LEADER) {
+                    if let Some(chan) = message.source_nickname()
+                            .map(|nick| find_or_spawn(&server,
+                                                      &mut user_senders,
+                                                      nick)) {
+                        chan.send(message.clone()).unwrap();
                     }
-                },
-                _ => (),
-            }
+                }
+            },
+            _ => (),
         }
     }
 }
