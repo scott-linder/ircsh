@@ -1,8 +1,7 @@
 use std::{error, result};
 use std::fmt;
 use std::collections::HashMap;
-use lex::{Lexer};
-use parse::{self, Cmd};
+use shlex::Shlex;
 
 pub type Result<T> = result::Result<T, Error>;
 
@@ -10,6 +9,7 @@ pub type Result<T> = result::Result<T, Error>;
 pub enum Error {
     EmptyCommand,
     UnknownCommand,
+    ParseError,
 }
 
 impl fmt::Display for Error {
@@ -23,13 +23,14 @@ impl error::Error for Error {
         match *self {
             Error::EmptyCommand => "Empty command",
             Error::UnknownCommand => "Unknown command",
+            Error::ParseError => "Parse error",
         }
     }
 }
 
 /// A shell.
 pub struct Sh {
-    pub cmds: HashMap<String, Box<Fn(&[&str]) -> String>>,
+    pub cmds: HashMap<String, Box<Fn(&[String]) -> String>>,
 }
 
 impl Sh {
@@ -41,10 +42,10 @@ impl Sh {
     }
 
     /// Run a command.
-    pub fn run_cmd(&self, cmd: &Cmd) -> Result<String> {
-        if let Some(name) = cmd.0.first() {
-            if let Some(cmd_fn) = self.cmds.get(*name) {
-                Ok(cmd_fn(&cmd.0[1..]))
+    pub fn run_cmd(&self, cmd: Vec<String>) -> Result<String> {
+        if let Some(name) = cmd.first() {
+            if let Some(cmd_fn) = self.cmds.get(name) {
+                Ok(cmd_fn(&cmd[1..]))
             } else {
                 Err(Error::UnknownCommand)
             }
@@ -54,8 +55,13 @@ impl Sh {
     }
 
     /// Parse and run a source string.
-    pub fn run_str(&self, source: &str) -> parse::Result<Vec<Result<String>>> {
-        let cmds = try!(parse::parse(Lexer::new(source)));
-        Ok(cmds.iter().map(|cmd| { self.run_cmd(cmd) }).collect())
+    pub fn run_str(&self, source: &str) -> Result<String> {
+        let mut shlex = Shlex::new(source);
+        let cmd = shlex.by_ref().collect::<Vec<_>>();
+        if shlex.had_error {
+            Err(Error::ParseError)
+        } else {
+            self.run_cmd(cmd)
+        }
     }
 }

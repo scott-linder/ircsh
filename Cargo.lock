@@ -3,6 +3,7 @@ name = "ircsh"
 version = "0.0.1"
 dependencies = [
  "irc 0.11.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "shlex 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -186,6 +187,11 @@ version = "0.3.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "shlex"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "tempdir"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -247,6 +253,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum rand 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)" = "022e0636ec2519ddae48154b028864bdce4eaf7d35226ab8e65c611be97b189d"
 "checksum redox_syscall 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)" = "8dd35cc9a8bdec562c757e3d43c1526b5c6d2653e23e2315065bc25556550753"
 "checksum rustc-serialize 0.3.22 (registry+https://github.com/rust-lang/crates.io-index)" = "237546c689f20bb44980270c73c3b9edd0891c1be49cc1274406134a66d3957b"
+"checksum shlex 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "7fdf1b9db47230893d76faad238fd6097fd6d6a9245cd7a4d90dbd639536bbd2"
 "checksum tempdir 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)" = "87974a6f5c1dfb344d733055601650059a3363de2a6104819293baff662132d6"
 "checksum time 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)" = "211b63c112206356ef1ff9b19355f43740fc3f85960c598a93d3a3d3ba7beade"
 "checksum user32-sys 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "4ef4711d107b21b410a3a974b1204d9accc8b10dad75d8324b5d755de1617d47"

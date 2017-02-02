@@ -1,9 +1,7 @@
 extern crate irc;
+extern crate shlex;
 
 mod sh;
-mod lex;
-mod parse;
-mod replace;
 
 use std::io::{self, BufRead, BufReader};
 use std::fs::File;
@@ -37,10 +35,10 @@ fn find_or_spawn<'a, S>(server: &IrcServer,
         let server = server.clone();
         thread::spawn(move || {
             let mut sh = Sh::new();
-            sh.cmds.insert("echo".into(), Box::new(|args: &[&str]| {
+            sh.cmds.insert("echo".into(), Box::new(|args: &[String]| {
                 args.join(" ")
             }));
-            sh.cmds.insert("count".into(), Box::new(|args: &[&str]| {
+            sh.cmds.insert("count".into(), Box::new(|args: &[String]| {
                 args.len().to_string()
             }));
             for message in rx.iter() {
@@ -48,13 +46,14 @@ fn find_or_spawn<'a, S>(server: &IrcServer,
                     Command::PRIVMSG(ref target, ref msg) => {
                         let msg = msg.trim_left_matches(LEADER);
                         match sh.run_str(msg) {
-                            Ok(rs) => for r in rs {
-                                server.send(Command::PRIVMSG(target.clone(), match r {
-                                    Ok(s) => format!("{}: {}", nick, s),
-                                    Err(e) => format!("error: {}", e),
-                                })).unwrap();
+                            Ok(r) => {
+                                server.send(Command::PRIVMSG(target.clone(),
+                                    r)).unwrap();
                             },
-                            Err(e) => server.send(Command::PRIVMSG(target.clone(), format!("error: {}", e))).unwrap(),
+                            Err(e) => {
+                                server.send(Command::PRIVMSG(target.clone(),
+                                    format!("error: {}", e))).unwrap();
+                            }
                         }
                     },
                     _ => (),

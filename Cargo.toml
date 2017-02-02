@@ -6,3 +6,4 @@ authors = ["scott-linder <scott.b.linder@wmich.edu>"]
 
 [dependencies]
 irc = "*"
+shlex = "*"
