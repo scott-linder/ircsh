@@ -25,10 +25,8 @@ fn join_start_channels<S>(server: &S) -> io::Result<()>
     Ok(())
 }
 
-static ECHO: &'static CmdFn = &|argv, _, tx| {
-    for arg in argv {
-        tx.send(arg).unwrap();
-    }
+static ECHO: &'static CmdFn = &|mut argv, _, tx| {
+    tx.send(argv.split_off(1).join(" ")).unwrap();
 };
 
 static CAT: &'static CmdFn = &|_, rx, tx| {
@@ -41,7 +39,7 @@ static COUNT: &'static CmdFn = &|argv, rx, tx| {
     tx.send(format!("{}", if argv.len() == 1 {
         rx.iter().count()
     } else {
-        argv.len()
+        argv.len() - 1
     })).unwrap()
 };
 
@@ -63,9 +61,9 @@ fn find_or_spawn<'a, S>(server: &IrcServer,
                     Command::PRIVMSG(ref target, ref msg) => {
                         let msg = msg.trim_left_matches(LEADER);
                         match sh.run_str(msg) {
-                            Ok(rs) => for r in rs {
+                            Ok(rs) => {
                                 server.send(Command::PRIVMSG(target.clone(),
-                                    r)).unwrap();
+                                    rs.join(" | "))).unwrap();
                             },
                             Err(e) => {
                                 server.send(Command::PRIVMSG(target.clone(),

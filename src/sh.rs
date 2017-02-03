@@ -46,14 +46,14 @@ impl<'a> Sh<'a> {
 
     /// Run a command.
     pub fn run_cmd(&self, argv: Vec<String>) -> Result<Vec<String>> {
-        let name = try!(argv.first().ok_or(Error::EmptyCommand));
-        let cmd_fn = *try!(self.cmds.get(&name[..])
-                           .ok_or(Error::UnknownCommand));
-        let argv = argv.clone();
-        let (tx1, rx1) = channel::<String>();
+        let cmd_fn = *try!(argv.first()
+                               .ok_or(Error::EmptyCommand)
+                               .and_then(|name|
+                                    self.cmds.get(name.as_str())
+                                             .ok_or(Error::UnknownCommand)));
+        let (_, rx1) = channel::<String>();
         let (tx2, rx2) = channel::<String>();
         thread::spawn(move || cmd_fn(argv, rx1, tx2));
-        drop(tx1);
         Ok(rx2.iter().collect())
     }
 
