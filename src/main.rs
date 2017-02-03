@@ -12,7 +12,7 @@ use irc::client::data::command::Command;
 use irc::client::data::message::Message;
 use irc::client::server::{IrcServer, Server};
 use irc::client::server::utils::ServerExt;
-use sh::Sh;
+use sh::{Sh, CmdFn};
 
 const LEADER: char = '~';
 
@@ -25,6 +25,26 @@ fn join_start_channels<S>(server: &S) -> io::Result<()>
     Ok(())
 }
 
+static ECHO: &'static CmdFn = &|argv, _, tx| {
+    for arg in argv {
+        tx.send(arg).unwrap();
+    }
+};
+
+static CAT: &'static CmdFn = &|_, rx, tx| {
+    for line in rx.iter() {
+        tx.send(line).unwrap();
+    }
+};
+
+static COUNT: &'static CmdFn = &|argv, rx, tx| {
+    tx.send(format!("{}", if argv.len() == 1 {
+        rx.iter().count()
+    } else {
+        argv.len()
+    })).unwrap()
+};
+
 fn find_or_spawn<'a, S>(server: &IrcServer,
                      user_senders: &'a mut HashMap<String, Sender<Message>>,
                      nick: S) -> &'a mut Sender<Message>
@@ -35,18 +55,15 @@ fn find_or_spawn<'a, S>(server: &IrcServer,
         let server = server.clone();
         thread::spawn(move || {
             let mut sh = Sh::new();
-            sh.cmds.insert("echo".into(), Box::new(|args: &[String]| {
-                args.join(" ")
-            }));
-            sh.cmds.insert("count".into(), Box::new(|args: &[String]| {
-                args.len().to_string()
-            }));
+            sh.cmds.insert("echo", ECHO);
+            sh.cmds.insert("cat", CAT);
+            sh.cmds.insert("count", COUNT);
             for message in rx.iter() {
                 match message.command {
                     Command::PRIVMSG(ref target, ref msg) => {
                         let msg = msg.trim_left_matches(LEADER);
                         match sh.run_str(msg) {
-                            Ok(r) => {
+                            Ok(rs) => for r in rs {
                                 server.send(Command::PRIVMSG(target.clone(),
                                     r)).unwrap();
                             },

@@ -1,6 +1,8 @@
 use std::{error, result};
 use std::fmt;
 use std::collections::HashMap;
+use std::sync::mpsc::{channel, Sender, Receiver};
+use std::thread;
 use shlex::Shlex;
 
 pub type Result<T> = result::Result<T, Error>;
@@ -28,34 +30,35 @@ impl error::Error for Error {
     }
 }
 
+pub type CmdFn = Fn(Vec<String>, Receiver<String>, Sender<String>) + Send + Sync + 'static;
+
 /// A shell.
-pub struct Sh {
-    pub cmds: HashMap<String, Box<Fn(&[String]) -> String>>,
+#[derive(Default)]
+pub struct Sh<'a> {
+    pub cmds: HashMap<&'a str, &'static CmdFn>,
 }
 
-impl Sh {
+impl<'a> Sh<'a> {
     /// Create a new shell.
-    pub fn new() -> Sh {
-        Sh {
-            cmds: HashMap::new()
-        }
+    pub fn new() -> Sh<'a> {
+        Default::default()
     }
 
     /// Run a command.
-    pub fn run_cmd(&self, cmd: Vec<String>) -> Result<String> {
-        if let Some(name) = cmd.first() {
-            if let Some(cmd_fn) = self.cmds.get(name) {
-                Ok(cmd_fn(&cmd[1..]))
-            } else {
-                Err(Error::UnknownCommand)
-            }
-        } else {
-            Err(Error::EmptyCommand)
-        }
+    pub fn run_cmd(&self, argv: Vec<String>) -> Result<Vec<String>> {
+        let name = try!(argv.first().ok_or(Error::EmptyCommand));
+        let cmd_fn = *try!(self.cmds.get(&name[..])
+                           .ok_or(Error::UnknownCommand));
+        let argv = argv.clone();
+        let (tx1, rx1) = channel::<String>();
+        let (tx2, rx2) = channel::<String>();
+        thread::spawn(move || cmd_fn(argv, rx1, tx2));
+        drop(tx1);
+        Ok(rx2.iter().collect())
     }
 
     /// Parse and run a source string.
-    pub fn run_str(&self, source: &str) -> Result<String> {
+    pub fn run_str(&self, source: &str) -> Result<Vec<String>> {
         let mut shlex = Shlex::new(source);
         let cmd = shlex.by_ref().collect::<Vec<_>>();
         if shlex.had_error {
