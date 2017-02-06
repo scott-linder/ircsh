@@ -25,22 +25,31 @@ fn join_start_channels<S>(server: &S) -> io::Result<()>
     Ok(())
 }
 
+macro_rules! ignore {
+    ($expression:expr) => (
+        match $expression {
+            Ok(()) => (),
+            Err(..) => return,
+        }
+    )
+}
+
 static ECHO: &'static CmdFn = &|mut argv, _, tx| {
-    tx.send(argv.split_off(1).join(" ")).unwrap();
+    ignore!(tx.send(argv.split_off(1).join(" ")))
 };
 
 static CAT: &'static CmdFn = &|_, rx, tx| {
     for line in rx.iter() {
-        tx.send(line).unwrap();
+        ignore!(tx.send(line))
     }
 };
 
 static COUNT: &'static CmdFn = &|argv, rx, tx| {
-    tx.send(format!("{}", if argv.len() == 1 {
+    ignore!(tx.send(format!("{}", if argv.len() == 1 {
         rx.iter().count()
     } else {
         argv.len() - 1
-    })).unwrap()
+    })))
 };
 
 fn find_or_spawn<'a, S>(server: &IrcServer,
@@ -63,11 +72,11 @@ fn find_or_spawn<'a, S>(server: &IrcServer,
                         match sh.run_str(msg) {
                             Ok(rs) => {
                                 server.send(Command::PRIVMSG(target.clone(),
-                                    rs.join(" | "))).unwrap();
+                                    format!("{}: {}", nick, rs.join(" | ")))).unwrap();
                             },
                             Err(e) => {
                                 server.send(Command::PRIVMSG(target.clone(),
-                                    format!("error: {}", e))).unwrap();
+                                    format!("{}: error: {}", nick, e))).unwrap();
                             }
                         }
                     },

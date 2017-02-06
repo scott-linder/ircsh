@@ -45,26 +45,42 @@ impl<'a> Sh<'a> {
     }
 
     /// Run a command.
-    pub fn run_cmd(&self, argv: Vec<String>) -> Result<Vec<String>> {
-        let cmd_fn = *try!(argv.first()
-                               .ok_or(Error::EmptyCommand)
-                               .and_then(|name|
-                                    self.cmds.get(name.as_str())
-                                             .ok_or(Error::UnknownCommand)));
-        let (_, rx1) = channel::<String>();
-        let (tx2, rx2) = channel::<String>();
-        thread::spawn(move || cmd_fn(argv, rx1, tx2));
-        Ok(rx2.iter().collect())
+    pub fn run_cmds(&self, argvs: Vec<Vec<String>>) -> Result<Vec<String>> {
+        let (_, mut rx1) = channel::<String>();
+        let (mut tx2, mut rx2) = channel::<String>();
+        for argv in argvs {
+            let cmd_fn = *try!(argv.first()
+                                   .ok_or(Error::EmptyCommand)
+                                   .and_then(|name|
+                                        self.cmds.get(name.as_str())
+                                                 .ok_or(Error::UnknownCommand)));
+            thread::spawn(move || cmd_fn(argv, rx1, tx2));
+            rx1 = rx2;
+            let pipe = channel();
+            tx2 = pipe.0;
+            rx2 = pipe.1;
+        }
+        Ok(rx1.iter().collect())
     }
 
     /// Parse and run a source string.
     pub fn run_str(&self, source: &str) -> Result<Vec<String>> {
         let mut shlex = Shlex::new(source);
-        let cmd = shlex.by_ref().collect::<Vec<_>>();
+        let mut cmds = Vec::new();
+        let mut cmd = Vec::new();
+        for token in shlex.by_ref() {
+            if token == "|" {
+                cmds.push(cmd);
+                cmd = Vec::new();
+            } else {
+                cmd.push(token);
+            }
+        }
+        cmds.push(cmd);
         if shlex.had_error {
             Err(Error::ParseError)
         } else {
-            self.run_cmd(cmd)
+            self.run_cmds(cmds)
         }
     }
 }
