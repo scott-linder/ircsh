@@ -1,5 +1,6 @@
 extern crate irc;
 extern crate shlex;
+extern crate getopts;
 
 mod sh;
 
@@ -12,6 +13,7 @@ use irc::client::data::command::Command;
 use irc::client::data::message::Message;
 use irc::client::server::{IrcServer, Server};
 use irc::client::server::utils::ServerExt;
+use getopts::Options;
 use sh::{Sh, CmdFn};
 
 const LEADER: char = '~';
@@ -34,19 +36,42 @@ macro_rules! ignore {
     )
 }
 
-static ECHO: &'static CmdFn = &|mut argv, _, tx| {
-    ignore!(tx.send(argv.split_off(1).join(" ")))
+macro_rules! send_fail {
+    ($stderr:ident, $opts:ident, $argv:ident) => (
+        match $opts.parse(&$argv[1..]) {
+            Ok(m) => m,
+            Err(f) => {
+                ignore!($stderr.send(format!("{}: {}", $argv[0], f)));
+                return
+            },
+        }
+    )
+}
+
+static FLAGS: &'static CmdFn = &|argv, _, stdout, stderr| {
+    let mut opts = Options::new();
+    opts.optflag("t", "test", "test flag");
+    let matches = send_fail!(stderr, opts, argv);
+    ignore!(stdout.send(if matches.opt_present("t") {
+        "test"
+    } else {
+        "not test"
+    }.into()))
 };
 
-static CAT: &'static CmdFn = &|_, rx, tx| {
-    for line in rx.iter() {
-        ignore!(tx.send(line))
+static ECHO: &'static CmdFn = &|mut argv, _, stdout, _| {
+    ignore!(stdout.send(argv.split_off(1).join(" ")))
+};
+
+static CAT: &'static CmdFn = &|_, stdin, stdout, _| {
+    for line in stdin.iter() {
+        ignore!(stdout.send(line))
     }
 };
 
-static COUNT: &'static CmdFn = &|argv, rx, tx| {
-    ignore!(tx.send(format!("{}", if argv.len() == 1 {
-        rx.iter().count()
+static COUNT: &'static CmdFn = &|argv, stdin, stdout, _| {
+    ignore!(stdout.send(format!("{}", if argv.len() == 1 {
+        stdin.iter().count()
     } else {
         argv.len() - 1
     })))
@@ -62,6 +87,7 @@ fn find_or_spawn<'a, S>(server: &IrcServer,
         let server = server.clone();
         thread::spawn(move || {
             let mut sh = Sh::new();
+            sh.cmds.insert("flags", FLAGS);
             sh.cmds.insert("echo", ECHO);
             sh.cmds.insert("cat", CAT);
             sh.cmds.insert("count", COUNT);
@@ -72,11 +98,11 @@ fn find_or_spawn<'a, S>(server: &IrcServer,
                         match sh.run_str(msg) {
                             Ok(rs) => {
                                 server.send(Command::PRIVMSG(target.clone(),
-                                    format!("{}: {}", nick, rs.join(" | ")))).unwrap();
+                                    format!("{}> {}", nick, rs.join(" | ")))).unwrap();
                             },
                             Err(e) => {
                                 server.send(Command::PRIVMSG(target.clone(),
-                                    format!("{}: error: {}", nick, e))).unwrap();
+                                    format!("{}! {}", nick, e))).unwrap();
                             }
                         }
                     },

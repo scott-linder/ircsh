@@ -7,16 +7,22 @@ use shlex::Shlex;
 
 pub type Result<T> = result::Result<T, Error>;
 
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub enum Error {
     EmptyCommand,
-    UnknownCommand,
+    UnknownCommand(String),
     ParseError,
+    CommandErrors(Vec<String>),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", error::Error::description(self))
+        write!(f, "{}", match *self {
+            Error::EmptyCommand
+                | Error::ParseError => error::Error::description(self).into(),
+            Error::UnknownCommand(ref s) => format!("Unknown command \"{}\".", s),
+            Error::CommandErrors(ref es) => es.join(" | "),
+        })
     }
 }
 
@@ -24,13 +30,17 @@ impl error::Error for Error {
     fn description(&self) -> &str {
         match *self {
             Error::EmptyCommand => "Empty command",
-            Error::UnknownCommand => "Unknown command",
+            Error::UnknownCommand(..) => "Unknown command",
             Error::ParseError => "Parse error",
+            Error::CommandErrors(..) => "Command error",
         }
     }
 }
 
-pub type CmdFn = Fn(Vec<String>, Receiver<String>, Sender<String>) + Send + Sync + 'static;
+pub type CmdFn = Fn(Vec<String>,
+                    Receiver<String>,
+                    Sender<String>,
+                    Sender<String>) + Send + Sync + 'static;
 
 /// A shell.
 #[derive(Default)]
@@ -46,21 +56,29 @@ impl<'a> Sh<'a> {
 
     /// Run a command.
     pub fn run_cmds(&self, argvs: Vec<Vec<String>>) -> Result<Vec<String>> {
-        let (_, mut rx1) = channel::<String>();
-        let (mut tx2, mut rx2) = channel::<String>();
+        let (stderr_out, stderr_in) = channel::<String>();
+        let (_, mut stdin) = channel::<String>();
+        let (mut stdout, mut stdin_next) = channel::<String>();
         for argv in argvs {
             let cmd_fn = *try!(argv.first()
                                    .ok_or(Error::EmptyCommand)
                                    .and_then(|name|
                                         self.cmds.get(name.as_str())
-                                                 .ok_or(Error::UnknownCommand)));
-            thread::spawn(move || cmd_fn(argv, rx1, tx2));
-            rx1 = rx2;
+                                                 .ok_or(Error::UnknownCommand(name.clone()))));
+            let stderr = stderr_out.clone();
+            thread::spawn(move || cmd_fn(argv, stdin, stdout, stderr));
+            stdin = stdin_next;
             let pipe = channel();
-            tx2 = pipe.0;
-            rx2 = pipe.1;
+            stdout = pipe.0;
+            stdin_next = pipe.1;
         }
-        Ok(rx1.iter().collect())
+        drop(stderr_out);
+        let stderrs = stderr_in.into_iter().collect::<Vec<_>>();
+        if stderrs.len() != 0 {
+            Err(Error::CommandErrors(stderrs))
+        } else {
+            Ok(stdin.into_iter().collect())
+        }
     }
 
     /// Parse and run a source string.
