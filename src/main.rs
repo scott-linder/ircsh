@@ -23,10 +23,8 @@ use sh::{Sh, CmdFn};
 
 lazy_static! {
     static ref REDIS: redis::Client = redis::Client::open(env::var("REDIS_URL").unwrap().as_str()).unwrap();
+    static ref LEADER: String = REDIS.get::<_, String>("leader").unwrap_or("$".into());
 }
-
-
-const LEADER: char = '~';
 
 fn join_start_channels<S>(server: &S) -> io::Result<()>
         where S: Server {
@@ -47,7 +45,7 @@ macro_rules! ignore {
 }
 
 macro_rules! try_or_send {
-    ($stderr:ident, $argv:ident, $expr:expr) => (
+    ($expr:expr, $stderr:ident, $argv:ident) => (
         match $expr {
             Ok(m) => m,
             Err(f) => {
@@ -59,19 +57,19 @@ macro_rules! try_or_send {
 }
 
 static GET: &'static CmdFn = &|argv, _, stdout, stderr| {
-    let conn = try_or_send!(stderr, argv, REDIS.get_connection());
+    let conn = try_or_send!(REDIS.get_connection(), stderr, argv);
     ignore!(stdout.send(ignore!(conn.get(&argv[1]))))
 };
 
 static SET: &'static CmdFn = &|argv, _, stdout, stderr| {
-    let conn = try_or_send!(stderr, argv, REDIS.get_connection());
+    let conn = try_or_send!(REDIS.get_connection(), stderr, argv);
     ignore!(stdout.send(ignore!(conn.set(&argv[1], &argv[2]))))
 };
 
 static FLAGS: &'static CmdFn = &|argv, _, stdout, stderr| {
     let mut opts = Options::new();
     opts.optflag("t", "test", "test flag");
-    let matches = try_or_send!(stderr, argv, opts.parse(&argv[1..]));
+    let matches = try_or_send!(opts.parse(&argv[1..]), stderr, argv);
     ignore!(stdout.send(if matches.opt_present("t") {
         "test"
     } else {
@@ -116,7 +114,7 @@ fn find_or_spawn<'a, S>(server: &IrcServer,
             for message in rx.iter() {
                 match message.command {
                     Command::PRIVMSG(ref target, ref msg) => {
-                        let msg = msg.trim_left_matches(LEADER);
+                        let msg = msg.trim_left_matches(LEADER.as_str());
                         match sh.run_str(msg) {
                             Ok(rs) => {
                                 server.send(Command::PRIVMSG(target.clone(),
@@ -146,7 +144,7 @@ fn main() {
         let message = message.unwrap();
         match message.command {
             Command::PRIVMSG(_, ref msg) => {
-                if msg.starts_with(LEADER) {
+                if msg.starts_with(LEADER.as_str()) {
                     if let Some(chan) = message.source_nickname()
                             .map(|nick| find_or_spawn(&server,
                                                       &mut user_senders,
