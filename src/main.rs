@@ -1,6 +1,9 @@
 extern crate irc;
 extern crate shlex;
 extern crate getopts;
+extern crate redis;
+#[macro_use]
+extern crate lazy_static;
 
 mod sh;
 
@@ -9,12 +12,19 @@ use std::fs::File;
 use std::thread;
 use std::sync::mpsc::{channel, Sender};
 use std::collections::HashMap;
+use std::env;
 use irc::client::data::command::Command;
 use irc::client::data::message::Message;
 use irc::client::server::{IrcServer, Server};
 use irc::client::server::utils::ServerExt;
 use getopts::Options;
+use redis::Commands;
 use sh::{Sh, CmdFn};
+
+lazy_static! {
+    static ref REDIS: redis::Client = redis::Client::open(env::var("REDIS_URL").unwrap().as_str()).unwrap();
+}
+
 
 const LEADER: char = '~';
 
@@ -30,15 +40,15 @@ fn join_start_channels<S>(server: &S) -> io::Result<()>
 macro_rules! ignore {
     ($expression:expr) => (
         match $expression {
-            Ok(()) => (),
+            Ok(o) => o,
             Err(..) => return,
         }
     )
 }
 
-macro_rules! send_fail {
-    ($stderr:ident, $opts:ident, $argv:ident) => (
-        match $opts.parse(&$argv[1..]) {
+macro_rules! try_or_send {
+    ($stderr:ident, $argv:ident, $expr:expr) => (
+        match $expr {
             Ok(m) => m,
             Err(f) => {
                 ignore!($stderr.send(format!("{}: {}", $argv[0], f)));
@@ -48,10 +58,20 @@ macro_rules! send_fail {
     )
 }
 
+static GET: &'static CmdFn = &|argv, _, stdout, stderr| {
+    let conn = try_or_send!(stderr, argv, REDIS.get_connection());
+    ignore!(stdout.send(ignore!(conn.get(&argv[1]))))
+};
+
+static SET: &'static CmdFn = &|argv, _, stdout, stderr| {
+    let conn = try_or_send!(stderr, argv, REDIS.get_connection());
+    ignore!(stdout.send(ignore!(conn.set(&argv[1], &argv[2]))))
+};
+
 static FLAGS: &'static CmdFn = &|argv, _, stdout, stderr| {
     let mut opts = Options::new();
     opts.optflag("t", "test", "test flag");
-    let matches = send_fail!(stderr, opts, argv);
+    let matches = try_or_send!(stderr, argv, opts.parse(&argv[1..]));
     ignore!(stdout.send(if matches.opt_present("t") {
         "test"
     } else {
@@ -87,6 +107,8 @@ fn find_or_spawn<'a, S>(server: &IrcServer,
         let server = server.clone();
         thread::spawn(move || {
             let mut sh = Sh::new();
+            sh.cmds.insert("get", GET);
+            sh.cmds.insert("set", SET);
             sh.cmds.insert("flags", FLAGS);
             sh.cmds.insert("echo", ECHO);
             sh.cmds.insert("cat", CAT);

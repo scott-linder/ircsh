@@ -8,3 +8,5 @@ authors = ["scott-linder <scott.b.linder@wmich.edu>"]
 irc = "*"
 shlex = "*"
 getopts = "*"
+redis = "*"
+lazy_static = "*"
