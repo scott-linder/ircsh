@@ -98,7 +98,7 @@ fn find_or_spawn<'a, S>(server: &IrcServer,
                         match sh.run_str(msg) {
                             Ok(rs) => {
                                 server.send(Command::PRIVMSG(target.clone(),
-                                    format!("{}> {}", nick, rs.join(" | ")))).unwrap();
+                                    format!("{}$ {}", nick, rs.join(" | ")))).unwrap();
                             },
                             Err(e) => {
                                 server.send(Command::PRIVMSG(target.clone(),
